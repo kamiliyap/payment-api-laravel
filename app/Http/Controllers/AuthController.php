@@ -61,21 +61,18 @@ class AuthController extends Controller
 
         if (!$user || !Hash::check($request->pin, $user->pin)) {
             return response()->json([
-                'message' => 'Phone Number and PIN do not match'
+                'message' => "Phone number and pin doesn't match."
             ], 401);
         }
 
-        $token = $user->createToken('api-token')->plainTextToken;
+        $accessToken = $user->createToken('access_token')->plainTextToken;
+        $refreshToken = $user->createToken('refresh_token')->plainTextToken;
 
         return response()->json([
             'status' => 'SUCCESS',
             'result' => [
-                'user_id' => $user->user_id,
-                'first_name' => $user->first_name,
-                'last_name' => $user->last_name,
-                'phone_number' => $user->phone_number,
-                'address' => $user->address,
-                'access_token' => $token,
+                'access_token' => $accessToken,
+                'refresh_token' => $refreshToken,
             ]
         ], 200);
     }
