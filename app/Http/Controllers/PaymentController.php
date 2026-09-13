@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Payment;
 use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class PaymentController extends Controller
 {
@@ -13,7 +15,7 @@ class PaymentController extends Controller
     {
         $validated = $request->validate([
             'amount' => 'required|numeric|min:1',
-            'description' => 'nullable|string|max:255',
+            'remarks' => 'required|string|max:255',
         ]);
 
         $userId = $request->user()->id;
@@ -24,37 +26,53 @@ class PaymentController extends Controller
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            if ($user->balance < $validated['amount']) {
-                return [
-                    'success' => false,
-                    'message' => 'Insufficient balance',
-                    'balance' => $user->balance,
-                ];
+            $amount = round((float) $validated['amount'], 2);
+            $balanceBefore = $user->balance;
+
+            if ($balanceBefore < $amount) {
+                return null;
             }
 
-            $user->balance = $user->balance - $validated['amount'];
+            $balanceAfter = round($balanceBefore - $amount, 2);
+            $user->balance = $balanceAfter;
             $user->save();
 
-            $transaction = Transaction::create([
+            $payment = Payment::create([
+                'payment_id' => (string) Str::uuid(),
                 'user_id' => $user->id,
-                'type' => 'payment',
-                'amount' => $validated['amount'],
-                'status' => 'success',
-                'description' => $validated['description'] ?? 'Payment',
+                'amount' => $amount,
+                'remarks' => $validated['remarks'],
+                'balance_before' => $balanceBefore,
+                'balance_after' => $balanceAfter,
             ]);
 
-            return [
-                'success' => true,
-                'message' => 'Payment success',
-                'balance' => $user->balance,
-                'transaction' => $transaction,
-            ];
+            Transaction::create([
+                'user_id' => $user->id,
+                'type' => 'payment',
+                'amount' => $amount,
+                'status' => 'success',
+                'description' => $validated['remarks'],
+            ]);
+
+            return $payment;
         });
 
-        if (!$result['success']) {
-            return response()->json($result, 400);
+        if ($result === null) {
+            return response()->json([
+                'message' => 'Balance is not enough'
+            ], 400);
         }
 
-        return response()->json($result, 200);
+        return response()->json([
+            'status' => 'SUCCESS',
+            'result' => [
+                'payment_id' => $result->payment_id,
+                'amount' => (float) $result->amount,
+                'remarks' => $result->remarks,
+                'balance_before' => (float) $result->balance_before,
+                'balance_after' => (float) $result->balance_after,
+                'created_date' => $result->created_at->format('Y-m-d H:i:s'),
+            ]
+        ], 200);
     }
 }
